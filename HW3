@@ -1,0 +1,926 @@
+/*********
+   CTIS164 - Template Source Program
+----------
+STUDENT : Hamza Rafi
+SECTION : 1
+HOMEWORK: 3
+----------
+
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#include <GL/glut.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <stdarg.h>
+
+#define WINDOW_WIDTH  800
+#define WINDOW_HEIGHT 600
+
+#define TIMER_PERIOD  10 // Period for the timer.
+#define TIMER_ON         1 // 0:disable timer, 1:enable timer
+
+#define D2R 0.0174532
+
+#define GAMETIME 2 //How long do user wants to play
+#define WONPOINTS 30
+
+#define STOP 0
+#define RUN 1
+#define FINISH 2
+
+typedef struct {
+	double x;
+	double y;
+}vec_t;
+
+typedef struct {
+	vec_t vec;
+	bool hit = false;
+}object_t;
+
+typedef struct {
+	vec_t vec;
+	int angle;
+}path_t;
+
+typedef struct {
+	int secDigit1;
+	int secDigit2;
+	int msecDigit1;
+	int msecDigit2;
+}time_type;
+
+
+int RocketPositionY = 0;//to control up/down motion with arrow keys
+
+path_t rocket = { {0,0 }, 0 };
+
+int totalPoints = 0;
+
+time_type time = { 0,0,0,0 };
+
+object_t targetSt[2]{ {-400,-400}, false };
+object_t targetCircular = { {-400,-400}, false };
+int angle = 0;
+
+bool hit = false;
+bool cHit = false;
+bool shoot = false;
+bool activeTimer = false;
+int state = FINISH;
+bool won = false;
+bool firstBoot = true;
+
+/* Global Variables for Template File */
+bool up = false, down = false, right = false, left = false;
+int  winWidth = WINDOW_WIDTH, winHeight= WINDOW_HEIGHT; // current Window width and height
+
+//
+// to draw circle, center at (x,y)
+// radius r
+//
+void circle(int x, int y, int r)
+{
+#define PI 3.1415
+	float angle;
+	glBegin(GL_POLYGON);
+	for (int i = 0; i < 100; i++)
+	{
+		angle = 2 * PI*i / 100;
+		glVertex2f(x + r * cos(angle), y + r * sin(angle));
+	}
+	glEnd();
+}
+
+void circle_wire(int x, int y, int r)
+{
+#define PI 3.1415
+	float angle;
+
+	glBegin(GL_LINE_LOOP);
+	for (int i = 0; i < 100; i++)
+	{
+		angle = 2 * PI*i / 100;
+		glVertex2f(x + r * cos(angle), y + r * sin(angle));
+	}
+	glEnd();
+}
+
+void print(int x, int y, const char *string, void *font)
+{
+	int len, i;
+
+	glRasterPos2f(x, y);
+	len = (int)strlen(string);
+	for (i = 0; i < len; i++)
+	{
+		glutBitmapCharacter(font, string[i]);
+	}
+}
+
+// display text with variables.
+// vprint(-winWidth / 2 + 10, winHeight / 2 - 20, GLUT_BITMAP_8_BY_13, "ERROR: %d", numClicks);
+void vprint(int x, int y, void *font, const char *string, ...)
+{
+	va_list ap;
+	va_start(ap, string);
+	char str[1024];
+	vsprintf_s(str, string, ap);
+	va_end(ap);
+
+	int len, i;
+	glRasterPos2f(x, y);
+	len = (int)strlen(str);
+	for (i = 0; i < len; i++)
+	{
+		glutBitmapCharacter(font, str[i]);
+	}
+}
+
+// vprint2(-50, 0, 0.35, "00:%02d", timeCounter);
+void vprint2(int x, int y, float size, const char *string, ...) {
+	va_list ap;
+	va_start(ap, string);
+	char str[1024];
+	vsprintf_s(str, string, ap);
+	va_end(ap);
+	glPushMatrix();
+	glTranslatef(x, y, 0);
+	glScalef(size, size, 1);
+
+	int len, i;
+	len = (int)strlen(str);
+	for (i = 0; i < len; i++)
+	{
+		glutStrokeCharacter(GLUT_STROKE_ROMAN, str[i]);
+	}
+	glPopMatrix();
+}
+
+//
+// To display onto window using OpenGL commands
+//
+
+void displayBackground() {
+	
+	//time
+	glColor3ub(255, 255, 255);
+	vprint(-310, 250, GLUT_BITMAP_HELVETICA_12, "TIME");
+	vprint(250, 250, GLUT_BITMAP_HELVETICA_12, "TOTAL POINTS");
+
+	//rectangle banner
+	glColor3ub(110, 90, 90);
+	glBegin(GL_QUADS);
+	glVertex2f(180, 270);
+	glVertex2f(180, 230);
+	glVertex2f(-180, 230);
+	glVertex2f(-180, 270);
+	glEnd();
+	glBegin(GL_LINE_LOOP);
+	glVertex2f(-190, 280);
+	glVertex2f(-190, 220);
+	glVertex2f(190, 220);
+	glVertex2f(190, 280);
+	glEnd();
+
+	//Name
+	glColor3ub(255, 255, 255);
+	print(-135, 245, "Hitting the target by Hamza Rafi", GLUT_BITMAP_8_BY_13);
+
+
+	//background
+	glBegin(GL_QUADS);
+	glColor3ub(110, 90, 90);
+	glVertex2f(400, 200);
+	glVertex2f(-400, 200);
+	glColor3ub(30, 220, 200);
+	glVertex2f(-400, -300);
+	glVertex2f(400, -300);
+	glEnd();
+}
+
+void displayTime() {
+	glColor3ub(0, 255, 0);
+	if (time.secDigit2 == 0 && time.secDigit1 == 10)
+		vprint(-318, 230, GLUT_BITMAP_HELVETICA_18, "%d:%d%d", time.secDigit1, time.msecDigit2, time.msecDigit1);
+	else
+		vprint(-318, 230, GLUT_BITMAP_HELVETICA_18, "%d%d:%d%d", time.secDigit2, time.secDigit1, time.msecDigit2, time.msecDigit1);
+}
+void drawRocket() {
+	//top
+	glColor3ub(0,0,0);
+	glBegin(GL_TRIANGLES);
+	glVertex2f(-335 + rocket.vec.x, -10 + rocket.vec.y + (65 * sin(rocket.angle * D2R)));
+	glVertex2f(-335 + rocket.vec.x, 10 + rocket.vec.y + (65 * sin(rocket.angle * D2R)));
+	glVertex2f(-310 + rocket.vec.x, rocket.vec.y + (90 * sin(rocket.angle * D2R) ));
+	glEnd();
+	glColor3ub(169, 80, 68);
+	glBegin(GL_LINES);
+	glVertex2f(-325 + rocket.vec.x, -7 + rocket.vec.y + (75 * sin(rocket.angle * D2R)));
+	glVertex2f(-310 + rocket.vec.x, rocket.vec.y + (90 * sin(rocket.angle * D2R)));
+	glVertex2f(-310 + rocket.vec.x, rocket.vec.y + (90 * sin(rocket.angle * D2R)));
+	glVertex2f(-325 + rocket.vec.x, 7 + rocket.vec.y + (75 * sin(rocket.angle * D2R)));
+	glEnd();
+	glColor3ub(153, 163, 164);
+	circle(-330 + rocket.vec.x, rocket.vec.y + (70 * sin(rocket.angle * D2R)), 10);
+	glLineWidth(1);
+	glColor3ub(0, 0, 0);
+	circle_wire(-330 + rocket.vec.x, rocket.vec.y + (70 * sin(rocket.angle * D2R)), 10);
+	
+
+	//base rectangle
+	glColor3ub(153, 163, 164);
+	glBegin(GL_QUADS);
+	glVertex2f(-390 + rocket.vec.x, 10 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-330 + rocket.vec.x, 10 + rocket.vec.y + (70 * sin(rocket.angle * D2R)));
+	glVertex2f(-330 + rocket.vec.x, -10 + rocket.vec.y + (70 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, -10 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glEnd();
+	
+	glColor3ub(0, 0, 0);
+	glBegin(GL_LINES);
+	glVertex2f(-390 + rocket.vec.x, 10 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-330 + rocket.vec.x, 10 + rocket.vec.y + (70 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, -10 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-330 + rocket.vec.x, -10 + rocket.vec.y + (70 * sin(rocket.angle * D2R)));
+	glEnd();
+
+	//design lines
+	glLineWidth(2);
+	glColor3ub(123, 125, 125);
+	glBegin(GL_LINES);
+	glVertex2f(-385 + rocket.vec.x, -10 + rocket.vec.y + (15 * sin(rocket.angle * D2R)));
+	glVertex2f(-380 + rocket.vec.x, 10 + rocket.vec.y + (20 * sin(rocket.angle * D2R)));
+	glVertex2f(-375 + rocket.vec.x, -10 + rocket.vec.y + (25 * sin(rocket.angle * D2R)));
+	glVertex2f(-370 + rocket.vec.x, 10 + rocket.vec.y + (30 * sin(rocket.angle * D2R)));
+	glVertex2f(-365 + rocket.vec.x, -10+ rocket.vec.y + (35 * sin(rocket.angle * D2R)));
+	glVertex2f(-360 + rocket.vec.x, 10 + rocket.vec.y + (40 * sin(rocket.angle * D2R)));
+	glVertex2f(-355 + rocket.vec.x, -10+ rocket.vec.y + (45 * sin(rocket.angle * D2R)));
+	glVertex2f(-350 + rocket.vec.x, 10 + rocket.vec.y + (50 * sin(rocket.angle * D2R)));
+	glVertex2f(-345 + rocket.vec.x, -10+ rocket.vec.y + (55 * sin(rocket.angle * D2R)));
+	glVertex2f(-340 + rocket.vec.x, 10 + rocket.vec.y + (60 * sin(rocket.angle * D2R)));
+	glVertex2f(-335 + rocket.vec.x, -10+ rocket.vec.y + (65 * sin(rocket.angle * D2R)));
+	glVertex2f(-330 + rocket.vec.x, 10 + rocket.vec.y + (70 * sin(rocket.angle * D2R)));
+	glEnd();
+
+	//window
+	glLineWidth(1);
+	glColor4ub(133, 193, 233, 200);
+	circle(-340 + rocket.vec.x , rocket.vec.y + (60 * sin(rocket.angle * D2R)), 4);
+	glColor3ub(128,128,128);
+	circle_wire(-340 + rocket.vec.x, rocket.vec.y + (60 * sin(rocket.angle * D2R)), 4);
+
+
+	//bottom
+	glColor3ub(171, 178, 185);
+	circle(-390 + rocket.vec.x, rocket.vec.y + (10 * sin(rocket.angle * D2R)), 11);
+	glColor3ub(23, 32, 42);
+	circle(-390 + rocket.vec.x, rocket.vec.y + (10 * sin(rocket.angle * D2R)), 4);
+	
+	//fire at back
+	glBegin(GL_TRIANGLES);
+	glColor3ub(244, 208, 63);
+	glVertex2f(-390 + rocket.vec.x, 11 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-420 + rocket.vec.x, 5 + rocket.vec.y + (-20 * sin(rocket.angle * D2R)));
+
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-430 + rocket.vec.x, -1 + rocket.vec.y + (-30 * sin(rocket.angle * D2R)));
+	
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, -11 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-415 + rocket.vec.x, -5 + rocket.vec.y + (-15 * sin(rocket.angle * D2R)));
+	glEnd();
+
+	glBegin(GL_TRIANGLES);
+	glColor3ub(230, 126, 34);
+	glVertex2f(-390 + rocket.vec.x, 8 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-410 + rocket.vec.x, 5 + rocket.vec.y + (-10 * sin(rocket.angle * D2R)));
+
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-405 + rocket.vec.x, -1 + rocket.vec.y + (-5 * sin(rocket.angle * D2R)));
+
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-390 + rocket.vec.x, -8 + rocket.vec.y + (10 * sin(rocket.angle * D2R)));
+	glVertex2f(-405 + rocket.vec.x, -5 + rocket.vec.y + (-5 * sin(rocket.angle * D2R)));
+	glEnd();
+
+	//sides
+	glColor3ub(0, 0, 0);
+	glLineWidth(3);
+	glBegin(GL_LINES);
+	glVertex2f(-380 + rocket.vec.x, 10 + rocket.vec.y + (20 * sin(rocket.angle * D2R)));
+	glVertex2f(-400 + rocket.vec.x,  15 + rocket.vec.y + (0 * sin(rocket.angle * D2R)));
+	glVertex2f(-380 + rocket.vec.x, -10 + rocket.vec.y + (20 * sin(rocket.angle * D2R)));
+	glVertex2f(-400 + rocket.vec.x, -15 + rocket.vec.y + (0 * sin(rocket.angle * D2R)));
+	glVertex2f(-380 + rocket.vec.x,  rocket.vec.y + (20 * sin(rocket.angle * D2R)));
+	glVertex2f(-400 + rocket.vec.x,  rocket.vec.y + (0 * sin(rocket.angle * D2R)));
+	glEnd();
+
+}
+/* withoutrotation
+void drawRocket() {
+	//top
+	glColor3ub(0,0,0);
+	glBegin(GL_TRIANGLES);
+	glVertex2f(-335 + rocket.vec.x, -10 + rocket.vec.y);
+	glVertex2f(-335 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-310 + rocket.vec.x, rocket.vec.y);
+	glEnd();
+	glColor3ub(169, 80, 68);
+	glBegin(GL_LINES);
+	glVertex2f(-325 + rocket.vec.x, -7 + rocket.vec.y);
+	glVertex2f(-310 + rocket.vec.x, rocket.vec.y);
+	glVertex2f(-310 + rocket.vec.x, rocket.vec.y);
+	glVertex2f(-325 + rocket.vec.x, 7 + rocket.vec.y);
+	glEnd();
+	glColor3ub(153, 163, 164);
+	circle(-330 + rocket.vec.x, rocket.vec.y, 10);
+	glLineWidth(1);
+	glColor3ub(0, 0, 0);
+	circle_wire(-330 + rocket.vec.x, rocket.vec.y, 10);
+
+
+	//base rectangle
+	glColor3ub(153, 163, 164);
+	glRectf(-390 + rocket.vec.x, -10 + rocket.vec.y, -330 + rocket.vec.x, 10 + rocket.vec.y);
+	glColor3ub(0, 0, 0);
+	glBegin(GL_LINES);
+	glVertex2f(-390 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-330 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-390 + rocket.vec.x, -10 + rocket.vec.y);
+	glVertex2f(-330 + rocket.vec.x, -10 + rocket.vec.y);
+	glEnd();
+
+	//design lines
+	glLineWidth(2);
+	glColor3ub(123, 125, 125);
+	glBegin(GL_LINES);
+	glVertex2f(-385 + rocket.vec.x, -10 + rocket.vec.y);
+	glVertex2f(-375 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-375 + rocket.vec.x, -10 + rocket.vec.y);
+	glVertex2f(-365 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-365 + rocket.vec.x, -10+ rocket.vec.y);
+	glVertex2f(-355 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-355 + rocket.vec.x, -10+ rocket.vec.y);
+	glVertex2f(-345 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-345 + rocket.vec.x, -10+ rocket.vec.y);
+	glVertex2f(-335 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-335 + rocket.vec.x, -10+ rocket.vec.y);
+	glVertex2f(-325 + rocket.vec.x, 10 + rocket.vec.y);
+	glEnd();
+
+	//window
+	glLineWidth(1);
+	glColor4ub(133, 193, 233, 200);
+	circle(-340 + rocket.vec.x , rocket.vec.y, 4);
+	glColor3ub(128,128,128);
+	circle_wire(-340 + rocket.vec.x, rocket.vec.y, 4);
+
+
+	//bottom
+	glColor3ub(171, 178, 185);
+	circle(-390 + rocket.vec.x, rocket.vec.y, 11);
+	glColor3ub(23, 32, 42);
+	circle(-390 + rocket.vec.x, rocket.vec.y, 4);
+
+	//fire at back
+	glBegin(GL_TRIANGLES);
+	glColor3ub(244, 208, 63);
+	glVertex2f(-390 + rocket.vec.x, 11 + rocket.vec.y);
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y);
+	glVertex2f(-420 + rocket.vec.x, 5 + rocket.vec.y);
+
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y);
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y);
+	glVertex2f(-430 + rocket.vec.x, -1 + rocket.vec.y);
+
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y);
+	glVertex2f(-390 + rocket.vec.x, -11 + rocket.vec.y);
+	glVertex2f(-415 + rocket.vec.x, -5 + rocket.vec.y);
+	glEnd();
+
+	glBegin(GL_TRIANGLES);
+	glColor3ub(230, 126, 34);
+	glVertex2f(-390 + rocket.vec.x, 8 + rocket.vec.y);
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y);
+	glVertex2f(-410 + rocket.vec.x, 5 + rocket.vec.y);
+
+	glVertex2f(-390 + rocket.vec.x, 2 + rocket.vec.y);
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y);
+	glVertex2f(-405 + rocket.vec.x, -1 + rocket.vec.y);
+
+	glVertex2f(-390 + rocket.vec.x, -3 + rocket.vec.y);
+	glVertex2f(-390 + rocket.vec.x, -8 + rocket.vec.y);
+	glVertex2f(-405 + rocket.vec.x, -5 + rocket.vec.y);
+	glEnd();
+
+	//sides
+	glColor3ub(0, 0, 0);
+	glLineWidth(3);
+	glBegin(GL_LINES);
+	glVertex2f(-380 + rocket.vec.x, 10 + rocket.vec.y);
+	glVertex2f(-400 + rocket.vec.x,  15 + rocket.vec.y);
+	glVertex2f(-380 + rocket.vec.x, -10 + rocket.vec.y);
+	glVertex2f(-400 + rocket.vec.x, -15 + rocket.vec.y);
+	glVertex2f(-380 + rocket.vec.x,  rocket.vec.y);
+	glVertex2f(-400 + rocket.vec.x,  rocket.vec.y);
+	glEnd();
+
+}
+
+*/
+
+void drawCircluarTarget(object_t targetC) {
+	// head
+	glColor3ub(168, 163, 163);
+	circle(targetC.vec.x, targetC.vec.y, 28);
+	
+	//eyes strip
+	glColor3ub(255, 220, 177);
+	glRectf(-20 + targetC.vec.x, 0 + targetC.vec.y, 20 + targetC.vec.x, 15 + targetC.vec.y);
+	//eyes
+	glColor3f(0, 0, 0);
+	glLineWidth(2);
+	glBegin(GL_LINES);
+	//left eyeborw
+	glVertex2f(-15 + targetC.vec.x, 15 + targetC.vec.y);
+	glVertex2f(-5 + targetC.vec.x, 10 + targetC.vec.y);
+	//right eyebrow
+	glVertex2f(+15 + targetC.vec.x, 15 + targetC.vec.y);
+	glVertex2f(+5 + targetC.vec.x, 10 + targetC.vec.y);
+	glEnd();
+	//left eye
+	circle(-10 + targetC.vec.x, 7 + targetC.vec.y, 3);
+	//right eye
+	circle(+10 + targetC.vec.x, 7 + +targetC.vec.y, 3);
+}
+
+
+void drawTarget(vec_t targ) {
+	//horns
+	glColor3ub(108, 52, 131);
+	glBegin(GL_TRIANGLES);
+	glVertex2f(targ.x + 5, targ.y +5 );
+	glVertex2f(targ.x + 25, targ.y -5);
+	glVertex2f(targ.x + 15, targ.y - 10);
+
+	glVertex2f(targ.x + 45, targ.y +5);
+	glVertex2f(targ.x + 25, targ.y - 5);
+	glVertex2f(targ.x + 35, targ.y - 10);
+	glEnd();
+
+	//horns edges
+	glColor3ub(0, 0, 0);
+	glBegin(GL_LINE_LOOP);
+	glVertex2f(targ.x + 5, targ.y + 5);
+	glVertex2f(targ.x + 25, targ.y - 5);
+	glVertex2f(targ.x + 15, targ.y - 10);
+
+	glVertex2f(targ.x + 45, targ.y + 5);
+	glVertex2f(targ.x + 25, targ.y - 5);
+	glVertex2f(targ.x + 35, targ.y - 10);
+	glEnd();
+
+	//face front
+	glColor3ub(108, 52, 131);
+	circle(targ.x + 25, targ.y - 20, 22);
+	//face edges
+	glColor3ub(0, 0, 0);
+	circle_wire(targ.x + 25, targ.y - 20, 22);
+
+	//eyes
+	glColor3ub(0, 0, 0);
+	glLineWidth(2);
+	glBegin(GL_LINES);
+	
+	//eye brows
+	//left eyeborw
+	glVertex2f(targ.x + 20, targ.y - 20);
+	glVertex2f(targ.x + 12, targ.y - 10);
+	//right eyebrow
+	glVertex2f(targ.x + 30, targ.y - 20);
+	glVertex2f(targ.x + 38, targ.y - 10);
+	glEnd();
+
+	//left eye
+	circle(targ.x + 16, targ.y - 20, 3);
+	//right eye
+	circle(targ.x + 34, targ.y - 20, 3);
+
+
+	//mouth
+	glBegin(GL_LINE_STRIP);
+	glLineWidth(1);
+	glVertex2f(targ.x + 15, targ.y - 28);
+	glVertex2f(targ.x + 21, targ.y - 31);
+	glVertex2f(targ.x + 28, targ.y - 31);
+	glVertex2f(targ.x + 34, targ.y - 28);
+	glEnd();
+
+	//teeths on the mouth
+	glBegin(GL_TRIANGLES);
+	glVertex2f(targ.x + 12, targ.y - 25);
+	glVertex2f(targ.x + 15, targ.y - 35);
+	glVertex2f(targ.x + 18, targ.y - 30);
+	glVertex2f(targ.x + 31, targ.y - 30);
+	glVertex2f(targ.x + 34, targ.y - 35);
+	glVertex2f(targ.x + 37, targ.y - 25);
+	glEnd();
+}
+
+
+void display() {
+	//
+	// clear window to black
+	//
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	displayBackground();
+	displayTime();
+	
+	if (!shoot)
+		rocket.vec.y = RocketPositionY;
+	drawRocket();
+
+
+	if (firstBoot)
+	{
+		glColor3ub(23, 32, 42);
+		vprint(-90, 150, GLUT_BITMAP_TIMES_ROMAN_24, "Score %d points to win!", WONPOINTS);
+		vprint(-395, -50, GLUT_BITMAP_9_BY_15, "Press arrow up/down or letf/right");
+		vprint(-395, -62, GLUT_BITMAP_9_BY_15, "to change launch position");
+	}
+
+
+	if (totalPoints >= WONPOINTS && state == RUN)
+	{
+		state = FINISH;
+		activeTimer = !activeTimer;
+		won = true;
+	}
+	if (won)
+	{
+		glColor3ub(244, 208, 63);
+		vprint(-50, 0, GLUT_BITMAP_HELVETICA_18, "YOU WON!");
+	}
+
+	if (targetSt->hit == false && ((rocket.vec.x - 240 >= targetSt->vec.x && rocket.vec.x - 240 <= targetSt->vec.x + 50) || (rocket.vec.x - 350 >= targetSt->vec.x && rocket.vec.x - 350 <= targetSt->vec.x + 50))
+		&&
+		((rocket.vec.y <= targetSt->vec.y && rocket.vec.y >= targetSt->vec.y - 40) || (rocket.vec.y + 5 <= targetSt->vec.y && rocket.vec.y + 5 >= targetSt->vec.y - 40) || (rocket.vec.y - 5 <= targetSt->vec.y && rocket.vec.y - 5 >= targetSt->vec.y - 40)))
+	{
+		totalPoints += 2;			
+		targetSt->hit = true;
+		hit = true;
+	}
+	if (targetSt->hit != true) {
+		drawTarget(targetSt->vec);
+	}
+
+	if (targetCircular.hit == false && ((rocket.vec.x - 240 >= targetCircular.vec.x && rocket.vec.x - 240 <= targetCircular.vec.x + 50) || (rocket.vec.x - 350 >= targetCircular.vec.x && rocket.vec.x - 350 <= targetCircular.vec.x + 50))
+		&&
+		((rocket.vec.y <= targetCircular.vec.y && rocket.vec.y >= targetCircular.vec.y - 40) || (rocket.vec.y + 5 <= targetCircular.vec.y && rocket.vec.y + 5 >= targetCircular.vec.y - 40) || (rocket.vec.y - 5 <= targetCircular.vec.y && rocket.vec.y - 5 >= targetCircular.vec.y - 40)))
+	{
+		totalPoints += 4;
+		targetCircular.hit = true;
+		cHit = true;
+	}
+	if (targetCircular.hit != true) {
+		drawCircluarTarget(targetCircular);
+	}
+
+
+	glColor3ub(200, 200, 200);
+	vprint(290, 230, GLUT_BITMAP_HELVETICA_18, "%d", totalPoints);
+	glColor3ub(0, 0, 0);
+	if (state == FINISH) {
+		vprint(-100, -290, GLUT_BITMAP_HELVETICA_18, "Press F1 to start the game");
+	}
+	else
+		vprint(-180, -290, GLUT_BITMAP_HELVETICA_18, "Press Spacebar to shoot, F1 to Pause / Continue");
+
+
+	glutSwapBuffers();
+}
+
+void initialise()
+{
+	firstBoot = false;
+	//initialize total for new game
+	totalPoints = 0;
+	//initialize horizontal postion 
+	RocketPositionY = 0;
+	//initialize rocket start and angle
+	rocket = {{ 0 ,0 }, 0};
+
+	//initialize straight targets
+	targetSt->vec.x = rand() % (371 - 30) + 60;
+	targetSt->vec.y = 340;
+
+	//initialise circular target
+	targetCircular.vec.x = 0;
+	targetCircular.vec.y = 100;
+
+	//setting game total time
+	time.secDigit2 = GAMETIME;
+	//setting other digits to zero
+	time.msecDigit1 = 0;
+	time.msecDigit2 = 0;
+	time.secDigit1 = 0;
+
+	//set won to false
+	won = false;
+
+}
+
+
+
+//
+// key function for ASCII charachters like ESC, a,b,c..,A,B,..Z
+//
+void onKeyDown(unsigned char key, int x, int y)
+{
+	// exit when ESC is pressed.
+	if (key == 27)
+		exit(0);
+	if (shoot == false && key == ' ')
+		shoot = true;
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+void onKeyUp(unsigned char key, int x, int y)
+{
+	// exit when ESC is pressed.
+	if (key == 27)
+		exit(0);
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// Special Key like GLUT_KEY_F1, F2, F3,...
+// Arrow Keys, GLUT_KEY_UP, GLUT_KEY_DOWN, GLUT_KEY_RIGHT, GLUT_KEY_RIGHT
+//
+void onSpecialKeyDown(int key, int x, int y)
+{
+	// Write your codes here.
+	
+	switch (key) {
+	case GLUT_KEY_F1:
+		if (state == FINISH) {
+			
+			initialise();
+
+			//change state
+			state = RUN;
+			activeTimer = true;
+			shoot = false;
+		}
+		else if (state == RUN) {
+			state = STOP;
+			activeTimer = false;
+		}
+		else if (state == STOP) {
+			state = RUN;
+			activeTimer = true;
+		}
+		break;
+	case GLUT_KEY_UP:
+		if (RocketPositionY < 190 && activeTimer)
+			RocketPositionY += 10;
+		break;
+	case GLUT_KEY_DOWN:
+		if (RocketPositionY > -290 && activeTimer)
+			RocketPositionY -= 10;
+		break;
+	case GLUT_KEY_LEFT:
+		if (rocket.angle <= 35 && activeTimer && !shoot)
+			rocket.angle += 5;		//increse
+		break;
+	case GLUT_KEY_RIGHT: 
+		if (rocket.angle >= -35 && activeTimer && !shoot)
+			rocket.angle -= 5;//decrese angle
+		break;
+	}
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// Special Key like GLUT_KEY_F1, F2, F3,...
+// Arrow Keys, GLUT_KEY_UP, GLUT_KEY_DOWN, GLUT_KEY_RIGHT, GLUT_KEY_RIGHT
+//
+void onSpecialKeyUp(int key, int x, int y)
+{
+	// Write your codes here.
+	switch (key) {
+	case GLUT_KEY_UP: up = false; break;
+	case GLUT_KEY_DOWN: down = false; break;
+	case GLUT_KEY_LEFT: left = false; break;
+	case GLUT_KEY_RIGHT: right = false; break;
+	}
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// When a click occurs in the window,
+// It provides which button
+// buttons : GLUT_LEFT_BUTTON , GLUT_RIGHT_BUTTON
+// states  : GLUT_UP , GLUT_DOWN
+// x, y is the coordinate of the point that mouse clicked.
+//
+void onClick(int button, int stat, int x, int y)
+{
+	// Write your codes here.
+
+
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// This function is called when the window size changes.
+// w : is the new width of the window in pixels.
+// h : is the new height of the window in pixels.
+//
+void onResize(int w, int h)
+{
+	winWidth = w;
+	winHeight = h;
+	glViewport(0, 0, w, h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(-w / 2, w / 2, -h / 2, h / 2, -1, 1);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	display(); // refresh window.
+}
+
+void onMoveDown(int x, int y) {
+	// Write your codes here.
+
+
+
+	// to refresh the window it calls display() function   
+	glutPostRedisplay();
+}
+
+// GLUT to OpenGL coordinate conversion:
+//   x2 = x1 - winWidth / 2
+//   y2 = winHeight / 2 - y1
+void onMove(int x, int y) {
+	// Write your codes here.
+
+
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+#if TIMER_ON == 1
+void onTimer(int v) {
+
+	glutTimerFunc(TIMER_PERIOD, onTimer, 0);
+	// Write your codes here.
+
+	if (activeTimer) {
+		//time
+		if (time.secDigit1 == 0) {
+			if (time.secDigit2 != 0) {
+				time.secDigit1 = 10;
+				time.secDigit2--;
+			}
+		}
+		if (time.msecDigit2 == 0) {
+			if (time.msecDigit1 == 0 && (time.secDigit1 != 0 || time.secDigit2 != 0)) {
+				time.msecDigit2 = 10;
+				time.secDigit1--;
+			}
+		}
+		if (time.msecDigit1 == 0) {
+			if (time.msecDigit2 != 0 || time.secDigit1 != 0 || time.secDigit2 != 0) {
+				time.msecDigit1 = 10;
+				time.msecDigit2--;
+			}
+		}
+		if (time.secDigit2 == 0 && time.secDigit1 == 0 && time.msecDigit2 == 0 && time.msecDigit1 == 0) {
+			state = FINISH;
+			activeTimer = false;
+		}
+		else
+			time.msecDigit1--;
+
+		//Rocket motion
+		if (shoot && state == RUN) {
+			if (rocket.vec.x < 800)
+			{
+				rocket.vec.x += 10;
+				rocket.vec.y += 5 * sin(rocket.angle * D2R);
+			}
+			else {
+				if (hit == false && cHit == false) {
+					totalPoints -= 1;
+				}
+				hit = false;
+				cHit = false;
+				shoot = false;
+
+				rocket.vec.x = 0;
+			}
+		}
+
+		//targets(straight)
+		if (state == RUN) {
+
+			for (int i = 0; i < 2; i++) {
+
+				if (targetSt->vec.y == -300) {
+					targetSt->vec.x = 300 + (rand() % 50);
+					targetSt->vec.y = 200;
+
+				}
+				if (targetSt->vec.y == 200) {
+					targetSt->hit = false;
+				}
+				targetSt->vec.y -= 2;
+			}
+		}
+		//target circular
+		if (state == RUN) {
+
+			targetCircular.vec.x = 0 + cos(angle * D2R) * 100;
+			targetCircular.vec.y = 0 + sin(angle* D2R ) * 100;
+			if (angle == 360) {
+				angle = 0;
+				targetCircular.hit = false;
+			}
+			angle += 2;
+
+		}
+	}
+
+
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay(); // display()
+
+}
+#endif
+
+void Init() {
+
+	// Smoothing shapes
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+}
+
+void main(int argc, char *argv[]) {
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+	glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
+	//glutInitWindowPosition(100, 100);
+	glutCreateWindow("HW#3 - Hitting the Target by Hamza Rafi");
+
+	glutDisplayFunc(display);
+	glutReshapeFunc(onResize);
+
+	//
+	// keyboard registration
+	//
+	glutKeyboardFunc(onKeyDown);
+	glutSpecialFunc(onSpecialKeyDown);
+
+	glutKeyboardUpFunc(onKeyUp);
+	glutSpecialUpFunc(onSpecialKeyUp);
+
+	//
+	// mouse registration
+	//
+	glutMouseFunc(onClick);
+	glutMotionFunc(onMoveDown);
+	glutPassiveMotionFunc(onMove);
+
+#if  TIMER_ON == 1
+	// timer event
+	glutTimerFunc(TIMER_PERIOD, onTimer, 0);
+#endif
+
+	Init();
+
+	glutMainLoop();
+}
