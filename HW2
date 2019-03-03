@@ -1,0 +1,788 @@
+/*********
+   CTIS164 - HW2
+----------
+STUDENT : Hamza Rafi
+SECTION : 1
+HOMEWORK: 2
+*********/ 
+
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#include <GL/glut.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <stdarg.h>
+
+ 
+#define WINDOW_WIDTH  700
+#define WINDOW_HEIGHT 700
+
+#define TIMER_PERIOD  1000 // Period for the timer.
+#define TIMER_ON         0 // 0:disable timer, 1:enable timer
+
+#define D2R 0.0174532
+
+/* Global Variables for Template File */
+bool up = false, down = false, right = false, left = false;
+int  winWidth = 700, winHeight = 640; // current Window width and height
+
+
+/* Programmer variables and definitions */
+typedef struct {
+	float x = 400, y = 400;
+} point_t;
+
+typedef struct {
+	point_t start, end;
+	float m, b;
+} line_t;
+
+typedef struct {
+	point_t center;
+	float radius;
+} circle_t;
+
+typedef struct {
+	point_t A,B,C;
+	bool notIntersecting = true;
+} triangle_t;
+
+typedef struct {
+	point_t A, B, C, D;
+	bool notIntersecting = true;
+} rectangle_t;
+
+int fselect = 1;
+int countTriangle = 0;
+int countRectangle = 0;
+int clickcount = 0;
+line_t line;
+triangle_t triangle[100];
+rectangle_t rectangle[50];
+point_t trianglePoint[300];
+point_t rectanglePoint[200];
+int ctotal= 0;
+int rtotal = 0;
+
+bool start, end = false;
+point_t mouse;
+
+
+//
+// to draw circle, center at (x,y)
+// radius r
+//
+void circle(int x, int y, int r)
+{
+#define PI 3.1415
+	float angle;
+	glBegin(GL_POLYGON);
+	for (int i = 0; i < 100; i++)
+	{
+		angle = 2 * PI*i / 100;
+		glVertex2f(x + r * cos(angle), y + r * sin(angle));
+	}
+	glEnd();
+}
+
+void circle_wire(int x, int y, int r)
+{
+#define PI 3.1415
+	float angle;
+
+	glBegin(GL_LINE_LOOP);
+	for (int i = 0; i < 100; i++)
+	{
+		angle = 2 * PI*i / 100;
+		glVertex2f(x + r * cos(angle), y + r * sin(angle));
+	}
+	glEnd();
+}
+
+void print(int x, int y, const char *string, void *font)
+{
+	int len, i;
+
+	glRasterPos2f(x, y);
+	len = (int)strlen(string);
+	for (i = 0; i < len; i++)
+	{
+		glutBitmapCharacter(font, string[i]);
+	}
+}
+
+// display text with variables.
+// vprint(-winWidth / 2 + 10, winHeight / 2 - 20, GLUT_BITMAP_8_BY_13, "ERROR: %d", numClicks);
+void vprint(int x, int y, void *font, const char *string, ...)
+{
+	va_list ap;
+	va_start(ap, string);
+	char str[1024];
+	vsprintf_s(str, string, ap);
+	va_end(ap);
+
+	int len, i;
+	glRasterPos2f(x, y);
+	len = (int)strlen(str);
+	for (i = 0; i < len; i++)
+	{
+		glutBitmapCharacter(font, str[i]);
+	}
+}
+
+// vprint2(-50, 0, 0.35, "00:%02d", timeCounter);
+void vprint2(int x, int y, float size, const char *string, ...) {
+	va_list ap;
+	va_start(ap, string);
+	char str[1024];
+	vsprintf_s(str, string, ap);
+	va_end(ap);
+	glPushMatrix();
+	glTranslatef(x, y, 0);
+	glScalef(size, size, 1);
+
+	int len, i;
+	len = (int)strlen(str);
+	for (i = 0; i < len; i++)
+	{
+		glutStrokeCharacter(GLUT_STROKE_ROMAN, str[i]);
+	}
+	glPopMatrix();
+}
+
+//
+// To display onto window using OpenGL commands
+//
+
+void background() {
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glColor3ub(100, 100, 100);//dark grey
+	glBegin(GL_QUADS);
+	glVertex2f(-350, 320); 
+	glVertex2f(350, 320);
+	glVertex2f(350, -320);
+	glVertex2f(-350, -320);
+	glEnd();
+
+	glColor3ub(255, 255, 255);
+	vprint(-330, 330, GLUT_BITMAP_8_BY_13, "Hamza Rafi - 21701560");
+
+	glColor3ub(248, 255, 30);
+	vprint(-70, 330, GLUT_BITMAP_8_BY_13, "HW#2 2018-2019 Fall");
+
+	glColor3ub(255, 255, 255);
+	vprint(-340, -340, GLUT_BITMAP_8_BY_13, "F1: Set Start Position");
+
+	glColor3ub(255, 255, 255);
+	vprint(-130, -340, GLUT_BITMAP_8_BY_13, "F2: Set End Position");
+
+	glColor3ub(255, 255, 255);
+	vprint(50, -340, GLUT_BITMAP_8_BY_13, "F3: Add Triangles");
+
+	glColor3ub(255, 255, 255);
+	vprint(195, -340, GLUT_BITMAP_8_BY_13, "F4: Add rectangles");
+
+	int i;
+	for (i = 0; i < 700; i += 70)
+	{
+		glColor3ub(0, 0, 0);
+		glBegin(GL_LINES);
+		glVertex2f(-350 + i, 320);
+		glVertex2f(-350 + i, -320);
+		glEnd();
+	}
+	
+	for (i = 0; i < 700; i += 70)
+	{
+		glColor3ub(55, 110, 255);
+		glBegin(GL_LINES);
+		glVertex2f(-315 + i, 320);
+		glVertex2f(-315 + i, -320);
+		glEnd();
+	}
+	
+	for (i = 0; i < 700; i += 70)
+	{
+		glColor3ub(55, 110, 255);
+		glBegin(GL_LINES);
+		glVertex2f(-350, -320 + i);
+		glVertex2f(350, -320 + i);
+		glEnd();
+	}
+
+	for (i = 0; i < 700; i += 70)
+	{
+		glColor3ub(0, 0, 0);
+		glBegin(GL_LINES);
+		glVertex2f(-350, -285 + i);
+		glVertex2f(350, -285 + i);
+		glEnd();
+	}
+}
+
+void selection(int mode) {
+	glColor4ub(20, 255, 0, 128);
+	if (mode == 1)
+		circle(-334, -336, 10);
+	else if (mode == 2)
+		circle(-124, -336, 10);
+	else if (mode == 3)
+		circle(56, -336, 10);
+	else if (mode == 4)
+		circle(205, -336, 10);
+}
+
+void drawStartPoint() {
+	glColor3ub(80, 255, 80);
+	circle(line.start.x, line.start.y, 15);
+	glColor3ub(0, 0, 0);
+	vprint(line.start.x - 4, line.start.y - 4, GLUT_BITMAP_8_BY_13, "S");
+}
+
+void drawEndPoint() {
+	glColor3ub(80, 255, 80);
+	circle(line.end.x, line.end.y, 15);
+	glColor3ub(0, 0, 0);
+	vprint(line.end.x - 4, line.end.y - 4, GLUT_BITMAP_8_BY_13, "E");
+}
+
+void drawLine() {
+	glColor3ub(0, 0, 0);
+	glLineWidth(2);
+	glBegin(GL_LINES);
+	glVertex2f(line.start.x, line.start.y);
+	glVertex2f(line.end.x, line.end.y);
+	glEnd();
+	glLineWidth(1.0f);
+}
+
+void drawTriangle(int i) {
+	
+	if (triangle[i].notIntersecting)
+		glColor4ub(0, 255, 0, 90);
+	else 
+		glColor4ub(255, 0, 0, 90);
+	glBegin(GL_TRIANGLES); {
+		glVertex2f(triangle[i].A.x, triangle[i].A.y);
+		glVertex2f(triangle[i].B.x, triangle[i].B.y);
+		glVertex2f(triangle[i].C.x, triangle[i].C.y);
+	}glEnd();
+}
+void drawRectangle(int i) {
+
+	if (rectangle[i].notIntersecting)
+		glColor4ub(0, 255, 0, 90);
+	else
+		glColor4ub(255, 0, 0, 90);
+	glBegin(GL_QUADS); {
+		glVertex2f(rectangle[i].A.x, rectangle[i].A.y);
+		glVertex2f(rectangle[i].B.x, rectangle[i].B.y);
+		glVertex2f(rectangle[i].C.x, rectangle[i].C.y);
+		glVertex2f(rectangle[i].D.x, rectangle[i].D.y);
+	}glEnd();
+}
+
+void clicked(point_t point) {
+	glColor3ub(0, 0, 0);
+	circle(point.x, point.y, 2);
+}
+
+void calc(line_t l) {
+	l.m = (l.end.y - l.start.y) / (l.end.x - l.start.x);
+	l.b = l.start.y - (l.m * l.start.x);
+}
+
+int YatX(int x, line_t li) {
+	return (li.m * x + li.b);
+}
+/*
+bool isIntersecting(line_t testline , line_t line) {
+	if (line.start.x < line.end.x) {
+		for (int cx = line.start.x; cx < line.end.x; cx++) {
+			if (testline.start.x < testline.end.x); {
+				for (int vx = testline.start.x; vx < testline.end.x; vx++)
+				{
+					if (cx == vx) {
+						if (YatX(cx, line) == YatX(vx, testline))
+							return (true);
+					}
+				}
+			}
+			if (testline.start.x > testline.end.x); {
+				for (int vx = testline.start.x; vx > testline.end.x; vx--)
+				{
+					if (cx == vx) {
+						if (YatX(cx, line) == YatX(vx, testline))
+							return (true);
+					}
+				}
+			}
+		}
+	}
+	if (line.start.x > line.end.x) {
+		for (int cx = line.start.x; cx > line.end.x; cx--) {
+			if (testline.start.x < testline.end.x); {
+				for (int vx = testline.start.x; vx < testline.end.x; vx++)
+				{
+					if (cx == vx) {
+						if (YatX(cx, line) == YatX(vx, testline))
+							return (true);
+					}
+				}
+			}
+			if (testline.start.x > testline.end.x); {
+				for (int vx = testline.start.x; vx > testline.end.x; vx--)
+				{
+					if (cx == vx) {
+						if (YatX(cx, line) == YatX(vx, testline))
+							return (true);
+					}
+				}
+			}
+		}
+	}
+
+	return (false);
+}
+*/
+
+bool isIntersecting(line_t testline, line_t mainline) {
+	return (((mainline.start.x - testline.start.x)*(testline.end.y - testline.start.y) - (mainline.start.y - testline.start.y)*(testline.end.x - testline.start.x))
+		* ((mainline.end.x - testline.start.x)*(testline.end.y - testline.start.y) - (mainline.end.y - testline.start.y)*(testline.end.x - testline.start.x)) < 0)
+		&&
+		(((testline.start.x - mainline.start.x)*(mainline.end.y - mainline.start.y) - (testline.start.y - mainline.start.y)*(mainline.end.x - mainline.start.x))
+			* ((testline.end.x - mainline.start.x)*(mainline.end.y - mainline.start.y) - (testline.end.y - mainline.start.y)*(mainline.end.x - mainline.start.x)) < 0)
+		&&
+		(testline.start.x > mainline.start.x && testline.start.x < mainline.end.x) || (testline.start.x < mainline.start.x && testline.start.x > mainline.end.x);
+}
+
+/*
+bool isIntersecting(line_t testline, line_t line) {
+	point_t test;
+	test.x = (line.b - testline.b) / (testline.m - line.m);
+	test.y = ((line.m * testline.b) - (testline.m * line.b)) / (line.m - testline.m);
+
+	if (test.x > line.start.x && test.x < line.end.x) {
+		if (test.y > line.start.y && test.y < line.end.y) {
+			return true;
+			//triangle[countTriangle].notIntersecting = false;
+		}
+	}
+
+	if (triangle[countTriangle].notIntersecting = true) {
+		test.x = (line.b - testline.b) / (testline.m - line.m);
+		test.y = ((line.m * testline.b) - (testline.m * line.b)) / (line.m - testline.m);
+		if (test.x > line.start.x && test.x < line.end.x) {
+			if (test.y > line.start.y && test.y < line.end.y) {
+				return true;
+				//triangle[countTriangle].notIntersecting = false;
+			}
+		}
+	}
+}
+*/
+
+
+/*
+bool inLine(line_t lineB, point_t test)
+{
+	if (lineB.m >= 0)
+	{
+		if (lineB.start.y > lineB.end.y)
+		{
+			if ((test.x > lineB.end.x && test.x < lineB.start.x) && (test.y > lineB.end.y && test.y < lineB.start.y))
+				return true;
+		}
+		else if (lineB.start.y < lineB.end.y)
+		{
+			if ((test.x < lineB.end.x && test.x > lineB.start.x) && (test.y < lineB.end.y && test.y > lineB.start.y))
+				return true;
+		}
+	}
+	else if (lineB.m < 0)
+	{
+		if (lineB.start.y > lineB.end.y)
+		{
+			if ((test.x < lineB.end.x && test.x > lineB.start.x) && (test.y > lineB.end.y && test.y < lineB.start.y))
+				return true;
+		}
+		else if (lineB.start.y < lineB.end.y)
+		{
+			if ((test.x > lineB.end.x && test.x < lineB.start.x) && (test.y < lineB.end.y && test.y > lineB.start.y))
+				return true;
+		}
+	}
+	return false;
+}
+
+bool contains(line_t lineA, point_t testPoint) {
+	if ((testPoint.y == ((lineA.m * testPoint.x) + lineA.b)) && (inLine(lineA, testPoint)))
+		return true;
+
+	return false;
+}
+
+bool isIntersecting(line_t testline, line_t line)
+{
+	point_t testPoint;
+	testPoint.x = (line.b - testline.b) / (testline.m - line.m);
+	testPoint.y = ((line.m * testline.b) - (testline.m * line.b)) / (line.m - testline.m);
+
+	//printf("%f%f %f%f", line.b, testline.b, line.m , testline.m);
+	
+	if (contains(testline, testPoint) && contains(line, testPoint))
+		return true;
+	return false;
+}
+*/
+
+void intersectingT(line_t line) {
+	line_t line1, line2, line3;
+	calc(line);
+	for (int i = 0; i <= countTriangle; i++) {
+
+		line1.start = triangle[i].A;;
+		line1.end = triangle[i].B;
+		line2.start = triangle[i].B;
+		line2.end = triangle[i].C;
+		line3.start = triangle[i].C;
+		line3.end = triangle[i].A;
+		calc(line1);
+		calc(line2);
+		calc(line3);
+
+		if (isIntersecting(line1, line))
+			triangle[i].notIntersecting = false;
+		else if (isIntersecting(line2, line))
+			triangle[i].notIntersecting = false;
+		else if (isIntersecting(line3, line))
+			triangle[i].notIntersecting = false;
+	}
+}
+void intersectingR(line_t line) {
+	line_t line1, line2, line3, line4;
+	calc(line);
+	for (int i = 0; i <= countRectangle; i++) {
+
+		line1.start = rectangle[i].A;;
+		line1.end = rectangle[i].B;
+		line2.start = rectangle[i].B;
+		line2.end = rectangle[i].C;
+		line3.start = rectangle[i].C;
+		line3.end = rectangle[i].D;
+		line3.start = rectangle[i].D;
+		line3.end = rectangle[i].A;
+		calc(line1);
+		calc(line2);
+		calc(line3);
+		calc(line4);
+		if (isIntersecting(line1, line))
+			rectangle[i].notIntersecting = false;
+		else if (isIntersecting(line2, line))
+			rectangle[i].notIntersecting = false;
+		else if (isIntersecting(line3, line))
+			rectangle[i].notIntersecting = false;
+		else if (isIntersecting(line3, line))
+			rectangle[i].notIntersecting = false;
+	}
+}
+
+
+
+void display() {
+	//
+	// clear window to black
+	//
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	background();
+	selection(fselect);
+
+	glColor3ub(150, 150, 150);
+	vprint(270, 330, GLUT_BITMAP_8_BY_13, "%.0f %.0f", mouse.x, mouse.y);
+
+	for (int i = 0; i <= ctotal; i++) {
+		clicked(trianglePoint[i]);
+	}
+	for (int i = 0; i <= countTriangle; i++) {
+		if (triangle[i].C.x < 400)
+			drawTriangle(i);
+	}
+	
+	for (int i = 0; i <= rtotal; i++) {
+		clicked(rectanglePoint[i]);
+	}
+	for (int i = 0; i <= countRectangle; i++) {
+		if (rectangle[i].D.x < 400)
+			drawRectangle(i);
+	}
+	intersectingT(line);
+	intersectingR(line);
+
+	if (start && end)
+		drawLine();
+	if (start)
+		drawStartPoint();
+	if (end)
+		drawEndPoint();
+
+
+	glutSwapBuffers();
+}
+
+//
+// key function for ASCII charachters like ESC, a,b,c..,A,B,..Z
+//
+void onKeyDown(unsigned char key, int x, int y)
+{
+	// exit when ESC is pressed.
+	if (key == 27)
+		exit(0);
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+void onKeyUp(unsigned char key, int x, int y)
+{
+	// exit when ESC is pressed.
+	if (key == 27)
+		exit(0);
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// Special Key like GLUT_KEY_F1, F2, F3,...
+// Arrow Keys, GLUT_KEY_UP, GLUT_KEY_DOWN, GLUT_KEY_RIGHT, GLUT_KEY_RIGHT
+//
+void onSpecialKeyDown(int key, int x, int y)
+{
+	// Write your codes here.
+	switch (key) {
+	case GLUT_KEY_UP: up = true; break;
+	case GLUT_KEY_DOWN: down = true; break;
+	case GLUT_KEY_LEFT: left = true; break;
+	case GLUT_KEY_RIGHT: right = true; break;
+	}
+
+	if (key == GLUT_KEY_F1)
+		fselect = 1;
+	else if (key == GLUT_KEY_F2)
+		fselect = 2;
+	else if (key == GLUT_KEY_F3)
+		fselect = 3;
+	else if (key == GLUT_KEY_F4)
+		fselect = 4;
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// Special Key like GLUT_KEY_F1, F2, F3,...
+// Arrow Keys, GLUT_KEY_UP, GLUT_KEY_DOWN, GLUT_KEY_RIGHT, GLUT_KEY_RIGHT
+//
+void onSpecialKeyUp(int key, int x, int y)
+{
+	// Write your codes here.
+	switch (key) {
+	case GLUT_KEY_UP: up = false; break;
+	case GLUT_KEY_DOWN: down = false; break;
+	case GLUT_KEY_LEFT: left = false; break;
+	case GLUT_KEY_RIGHT: right = false; break;
+	}
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// When a click occurs in the window,
+// It provides which button
+// buttons : GLUT_LEFT_BUTTON , GLUT_RIGHT_BUTTON
+// states  : GLUT_UP , GLUT_DOWN
+// x, y is the coordinate of the point that mouse clicked.
+//
+void onClick(int button, int stat, int x, int y)
+{
+	// Write your codes here.
+
+	point_t click = { x - winWidth / 2 , winHeight / 2 - y };
+	
+	if (button == GLUT_LEFT_BUTTON && stat == GLUT_DOWN) {
+		if (fselect == 1) //starting point of the line segment
+		{
+			line.start = click;
+			start = !start;
+		}
+		if (fselect == 2) {  //end point of the line segment
+			if (line.start.x == click.x && line.start.y == click.y)
+				return; //if the same point is clicked twice then do do nothing and wait for another point
+			line.end = click;
+			end = !end;
+		}
+		if (fselect == 3) { //triangle making mode
+			if (clickcount == 0) {
+				triangle[countTriangle].A = click;
+				trianglePoint[ctotal++] = click;
+				clickcount++;
+			}
+			else if (clickcount == 1) {
+				triangle[countTriangle].B = click;
+				trianglePoint[ctotal++] = click;
+				clickcount++;
+			}
+			else if (clickcount == 2)
+			{
+				triangle[countTriangle].C = click;
+				trianglePoint[ctotal++] = click;
+				clickcount = 0;  //reset click count
+				countTriangle++; //next triangle
+			}
+		}
+		if (fselect == 4) { //rectangle making mode
+			if (clickcount == 0) {
+				rectangle[countRectangle].A = click;
+				rectanglePoint[rtotal++] = click;
+				clickcount++;
+			}
+			else if (clickcount == 1) {
+				rectangle[countRectangle].B = click;
+				rectanglePoint[rtotal++] = click;
+				clickcount++;
+			}
+			else if (clickcount == 2)
+			{
+				rectangle[countRectangle].C = click;
+				rectanglePoint[rtotal++] = click;
+				clickcount++;
+			}
+			else if (clickcount == 3)
+			{
+				rectangle[countRectangle].D = click;
+				rectanglePoint[rtotal++] = click;
+				clickcount = 0;  //reset click count
+				countRectangle++; //next rectangle
+			}
+		}
+		
+	
+	}
+		
+
+
+
+
+
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+//
+// This function is called when the window size changes.
+// w : is the new width of the window in pixels.
+// h : is the new height of the window in pixels.
+//
+void onResize(int w, int h)
+{
+	winWidth = w;
+	winHeight = h;
+	glViewport(0, 0, w, h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(-w / 2, w / 2, -h / 2, h / 2, -1, 1);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+	display(); // refresh window.
+}
+
+void onMoveDown(int x, int y) {
+	// Write your codes here.
+
+
+
+	// to refresh the window it calls display() function   
+	glutPostRedisplay();
+}
+
+// GLUT to OpenGL coordinate conversion:
+//   x2 = x1 - winWidth / 2
+//   y2 = winHeight / 2 - y1
+void onMove(int x, int y) {
+	// Write your codes here.
+
+	mouse.x = x - winWidth / 2;
+	mouse.y = winHeight / 2 - y;
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay();
+}
+
+#if TIMER_ON == 1
+void onTimer(int v) {
+
+	glutTimerFunc(TIMER_PERIOD, onTimer, 0);
+	// Write your codes here.
+
+
+
+	// to refresh the window it calls display() function
+	glutPostRedisplay(); // display()
+
+}
+#endif
+
+void Init() {
+
+	// Smoothing shapes
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+}
+
+
+
+void main(int argc, char *argv[]) {
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+	glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
+	//glutInitWindowPosition(100, 100);
+	glutCreateWindow("Homework 2 - CTIS164");
+
+	glutDisplayFunc(display);
+	glutReshapeFunc(onResize);
+
+	//
+	// keyboard registration
+	//
+	glutKeyboardFunc(onKeyDown);
+	glutSpecialFunc(onSpecialKeyDown);
+
+	glutKeyboardUpFunc(onKeyUp);
+	glutSpecialUpFunc(onSpecialKeyUp);
+
+	//
+	// mouse registration
+	//
+	glutMouseFunc(onClick);
+	glutMotionFunc(onMoveDown);
+	glutPassiveMotionFunc(onMove);
+
+#if  TIMER_ON == 1
+	// timer event
+	glutTimerFunc(TIMER_PERIOD, onTimer, 0);
+#endif
+
+	Init();
+
+	glutMainLoop();
+}
